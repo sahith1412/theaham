@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Downshift explainer</title>
+<style>
+  html,body{margin:0;background:#0b0f17;overflow:hidden}
+  #stage{width:1920px;height:1080px;display:block;font-family:"DejaVu Sans",sans-serif}
+  text{fill:#e6e9ef}
+  .mono{font-family:"DejaVu Sans Mono",monospace}
+</style>
+</head>
+<body>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080"></svg>
+<script>
+/* ---------- palette & helpers ---------- */
+const C = { bg:'#0b0f17', panel:'#131a26', line:'#243044', text:'#e6e9ef', mute:'#8b93a7',
+            warm:'#ff8a4c', cool:'#4cc9f0', green:'#7ee787', red:'#ff6b6b', gold:'#ffd166', violet:'#b388ff' };
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const easeOut=x=>1-Math.pow(1-clamp(x),3);
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ramp=(t,s,d=0.6)=>ease((t-s)/d);          // 0→1 starting at s over d seconds
+const pulse=(t,p=1.2)=>0.5+0.5*Math.sin(t*2*Math.PI/p);
+
+const svg=document.getElementById('stage');let CUR=svg;
+const NS='http://www.w3.org/2000/svg';
+function el(name,attrs={},parent=CUR){const e=document.createElementNS(NS,name);for(const k in attrs)e.setAttribute(k,attrs[k]);parent.appendChild(e);return e}
+function txt(s,x,y,o={}){const e=el('text',{x,y,'font-size':o.size||32,fill:o.fill||C.text,'text-anchor':o.anchor||'start',opacity:o.op==null?1:o.op,'font-weight':o.bold?'bold':'normal',class:o.mono?'mono':''},o.parent||svg);e.textContent=s;return e}
+function rect(x,y,w,h,o={}){return el('rect',{x,y,width:w,height:h,rx:o.rx==null?10:o.rx,fill:o.fill||C.panel,stroke:o.stroke||'none','stroke-width':o.sw||2,opacity:o.op==null?1:o.op},o.parent||svg)}
+function line(x1,y1,x2,y2,o={}){return el('line',{x1,y1,x2,y2,stroke:o.stroke||C.line,'stroke-width':o.sw||3,opacity:o.op==null?1:o.op,'stroke-dasharray':o.dash||'none','marker-end':o.arrow?'url(#arrow)':'none','stroke-linecap':'round'},o.parent||svg)}
+function circ(cx,cy,r,o={}){return el('circle',{cx,cy,r,fill:o.fill||C.cool,stroke:o.stroke||'none','stroke-width':o.sw||2,opacity:o.op==null?1:o.op},o.parent||svg)}
+function grp(o={}){return el('g',{transform:o.tf||'',opacity:o.op==null?1:o.op},o.parent||svg)}
+// multi-line text, auto-wrapped by max chars
+function para(lines,x,y,o={}){const g=grp({op:o.op==null?1:o.op,parent:o.parent});const lh=(o.size||32)*1.35;lines.forEach((l,i)=>txt(l,x,y+i*lh,{...o,op:1,parent:g}));return g}
+function wrap(s,n=70){const w=s.split(' ');const out=[];let cur='';for(const x of w){if((cur+' '+x).trim().length>n){out.push(cur.trim());cur=x}else cur+=' '+x}if(cur.trim())out.push(cur.trim());return out}
+// animated box with label; appears with scale+fade
+function box(x,y,w,h,label,t,s,o={}){const k=ramp(t,s,o.d||0.5);if(k<=0)return null;const g=grp({tf:`translate(${x+w/2} ${y+h/2}) scale(${lerp(.85,1,k)}) translate(${-w/2} ${-h/2})`,op:k,parent:o.parent});rect(0,0,w,h,{fill:o.fill||C.panel,stroke:o.stroke||C.line,sw:o.sw||2,parent:g,rx:o.rx});const ls=Array.isArray(label)?label:[label];const fs=o.size||26;ls.forEach((l,i)=>txt(l,w/2,h/2+(i-(ls.length-1)/2)*fs*1.25+fs*.35,{size:fs,anchor:'middle',fill:o.color||C.text,bold:o.bold,parent:g,mono:o.mono}));return g}
+// growing line (draw-on)
+function drawLine(x1,y1,x2,y2,t,s,o={}){const k=ramp(t,s,o.d||0.5);if(k<=0)return;line(x1,y1,lerp(x1,x2,k),lerp(y1,y2,k),{...o,arrow:o.arrow&&k>.98})}
+
+/* ---------- chrome: background, header, captions ---------- */
+function chrome(title,sceneIdx,tGlobal){
+  svg.innerHTML='';CUR=svg;
+  const defs=el('defs');
+  const m=el('marker',{id:'arrow',viewBox:'0 0 10 10',refX:'9',refY:'5',markerWidth:'7',markerHeight:'7',orient:'auto-start-reverse'},defs);
+  el('path',{d:'M0 0L10 5L0 10z',fill:C.mute},m);
+  const grad=el('linearGradient',{id:'bgg',x1:0,y1:0,x2:0,y2:1},defs);
+  el('stop',{offset:0,'stop-color':'#0e1420'},grad);el('stop',{offset:1,'stop-color':'#070a10'},grad);
+  rect(0,0,1920,1080,{fill:'url(#bgg)',rx:0});
+  // subtle grid
+  for(let x=0;x<1920;x+=120)line(x,0,x,1080,{stroke:'#121a28',sw:1});
+  for(let y=0;y<1080;y+=120)line(0,y,1920,y,{stroke:'#121a28',sw:1});
+  if(title){txt(title.toUpperCase(),80,70,{size:22,fill:C.mute,bold:true});line(80,86,80+title.length*14,86,{stroke:C.cool,sw:3})}
+  txt('DOWNSHIFT  ·  KALA LAYA STUDIO',1840,70,{size:18,fill:C.mute,anchor:'end'});
+  // progress bar
+  rect(0,1076,1920*(tGlobal/TOTAL),4,{fill:C.cool,rx:0});
+}
+function caption(lines,t){
+  // lines: [[sec,text],...]; show the latest one whose sec<=t, fade in over .4s
+  let cur=null,next=null;for(const l of lines){if(l[0]<=t)cur=l;else{next=l;break}}
+  if(!cur)return;const k=ramp(t,cur[0],0.4);
+  const ls=wrap(cur[1],88);
+  const h=ls.length*44+36;const y=1080-60-h;
+  rect(160,y,1600,h,{fill:'rgba(5,8,14,0.82)',stroke:'#1d2838',op:k,rx:14});
+  ls.forEach((l,i)=>txt(l,960,y+54+i*44,{size:30,anchor:'middle',op:k}));
+}
+
+/* ---------- GPU card drawing ---------- */
+function card(x,y,name,sub,color,t,s,o={}){const k=ramp(t,s,.6);if(k<=0)return;const g=grp({tf:`translate(${x} ${y+lerp(30,0,k)})`,op:k});
+  rect(0,0,420,170,{fill:'#161e2c',stroke:color,sw:3,parent:g,rx:16});
+  rect(20,20,380,40,{fill:'#0d121b',parent:g,rx:6});
+  for(let i=0;i<9;i++)rect(28+i*41,26,30,28,{fill:'#1c2635',parent:g,rx:4});
+  circ(90,120,32,{fill:'#0d121b',stroke:color,sw:3,parent:g});circ(200,120,32,{fill:'#0d121b',stroke:color,sw:3,parent:g});
+  for(let i=0;i<7;i++){line(90+30*Math.cos(i),120+30*Math.sin(i),90+8*Math.cos(i),120+8*Math.sin(i),{stroke:color,sw:3,parent:g});line(200+30*Math.cos(i),120+30*Math.sin(i),200+8*Math.cos(i),120+8*Math.sin(i),{stroke:color,sw:3,parent:g})}
+  txt(name,400,110,{size:34,anchor:'end',bold:true,fill:color,parent:g});txt(sub,400,145,{size:20,anchor:'end',fill:C.mute,parent:g});}
+
+/* ---------- scenes ---------- */
+const SCENES=[];
+function scene(name,dur,caps,draw){SCENES.push({name,dur,caps,draw})}
+
+// 0 Title
+scene('',14,[[0.5,'Downshift. A Kala Laya Studio open-source project.'],[5,'The question: can a game built for an RTX 3050 run on a GTX 1060?'],[9.5,'This video explains everything the research found — and what we are going to build.']],t=>{
+  const k=ramp(t,0.2,1.2);
+  txt('DOWNSHIFT',960,470,{size:150,anchor:'middle',bold:true,op:k});
+  line(960-lerp(0,420,k),510,960+lerp(0,420,k),510,{stroke:C.cool,sw:6});
+  txt('Run RTX-3050-class games on a GTX 1060',960,580,{size:40,anchor:'middle',fill:C.mute,op:ramp(t,1.2,.8)});
+  txt('a Kala Laya Studio open-source project',960,640,{size:28,anchor:'middle',fill:C.cool,op:ramp(t,2,.8)});
+  const k2=ramp(t,5,.8);if(k2>0){card(400,760-60*(1-k2)+0,'RTX 3050','Ampere · 2022 · 8 GB',C.warm,t,5);card(1100,760,'GTX 1060','Pascal · 2016 · 6 GB',C.cool,t,5.5);drawLine(830,845,1090,845,t,6.2,{stroke:C.mute,sw:4,arrow:true,d:.8});txt('?',960,825,{size:48,anchor:'middle',fill:C.gold,op:ramp(t,7)})}
+});
+
+// 1 The goal
+scene('The goal',40,[[0.5,'The RTX 3050 is a 2022 card. The GTX 1060 is from 2016. Millions of people still own one.'],[7,'Our target: any game that runs on the 3050 should run on the 1060 — at 1080p, 60 frames per second.'],[14,'Not by lowering the whole game to a blurry mess, and not by rewriting the game.'],[20,'By swapping the handful of expensive rendering techniques for cheaper ones the player barely notices.'],[27,'And by letting an AI agent decide those swaps for each game automatically — no per-game code, ever.'],[34,'Every game ends up in one of three buckets. We will come back to them.']],t=>{
+  card(300,200,'RTX 3050','Ampere · 2022 · minimum spec',C.warm,t,0.3);card(1200,200,'GTX 1060','Pascal · 2016 · what people own',C.cool,t,0.8);
+  drawLine(730,285,1190,285,t,1.6,{stroke:C.mute,sw:4,arrow:true,d:.8});
+  // target pill
+  box(560,440,800,90,'1080p  ·  ≥ 60 fps average  ·  ≥ 45 fps 1 % low',t,7,{stroke:C.green,color:C.green,size:30,bold:true});
+  // not / not
+  const n1=ramp(t,14);if(n1>0){txt('✗  lower everything to Low',420,620,{size:32,fill:C.red,op:n1});txt('✗  rewrite the game',420,670,{size:32,fill:C.red,op:ramp(t,16)})}
+  const y1=ramp(t,20);if(y1>0){txt('✓  swap only the expensive techniques',1080,620,{size:32,fill:C.green,op:y1});txt('✓  an agent decides, per game, from data',1080,670,{size:32,fill:C.green,op:ramp(t,27)})}
+  // buckets preview
+  const b=ramp(t,34);if(b>0){[['A','already runs',C.green],['B','runs with swaps',C.cool],['C','impossible',C.red]].forEach((x,i)=>{const g=grp({tf:`translate(${520+i*320} 760)`,op:ramp(t,34+i*.5)});rect(0,0,280,100,{fill:'#141b28',stroke:x[2],sw:3,parent:g,rx:50});txt(x[0],60,65,{size:46,bold:true,fill:x[2],parent:g,anchor:'middle'});txt(x[1],170,62,{size:24,anchor:'middle',fill:C.text,parent:g})})}
+});
+
+// 2 Honest limit
+scene('The honest limit',48,[[0.5,'First, the honest part. The original idea was "rebuild the graphics engine of every game".'],[7,'That is impossible in general. The engine is compiled into the game binary. There is nothing to swap out.'],[14,'But there is a place where we can stand between the game and the GPU: the graphics API boundary.'],[21,'Every shader and every draw call passes through it, as data, at runtime.'],[27,'This is not a new trick. DXVK translates DirectX to Vulkan this way. ReShade injects effects this way.'],[34,"OptiScaler swaps one upscaler for another this way. NVIDIA's own RTX Remix re-lights 2004 games this way."],[41,'Downshift does the same thing in the other direction: it makes rendering cheaper, not prettier.']],t=>{
+  const k=ramp(t,0.3);txt('"Rebuild the graphics engine of every game"',960,230,{size:44,anchor:'middle',op:k});
+  const x=ramp(t,7,.8);if(x>0)line(420,218,420+1080*x,218,{stroke:C.red,sw:8});
+  // binary block
+  const g=grp({tf:'translate(260 320)',op:ramp(t,7.5)});rect(0,0,520,260,{fill:'#141b28',stroke:C.line,parent:g,rx:14});txt('game.exe',260,50,{size:28,anchor:'middle',bold:true,parent:g,mono:true});
+  ['game logic','physics','audio','RENDERING ENGINE','assets'].forEach((s,i)=>{rect(30,70+i*36,460,30,{fill:i==3?'#3a1f14':'#0d121b',parent:g,rx:6});txt(s,260,92+i*36,{size:20,anchor:'middle',fill:i==3?C.warm:C.mute,parent:g,mono:true})});
+  txt('compiled in — cannot be replaced',260,290,{size:22,anchor:'middle',fill:C.red,parent:g});
+  // API boundary
+  const a=ramp(t,14);if(a>0){const g2=grp({tf:'translate(900 320)',op:a});
+    box(0,0,260,70,'game',t,14,{parent:g2});drawLine(130,70,130,130,t,14.6,{arrow:true,stroke:C.mute,parent:g2,d:.4});
+    box(0,130,260,70,'graphics API',t,15,{parent:g2,stroke:C.cool,color:C.cool,bold:true});
+    txt('← every shader, every draw call,',280,160,{size:24,fill:C.cool,parent:g2,op:ramp(t,21)});txt('   as data, at runtime',280,195,{size:24,fill:C.cool,parent:g2,op:ramp(t,21)});
+    drawLine(130,200,130,260,t,15.6,{arrow:true,stroke:C.mute,parent:g2,d:.4});box(0,260,260,70,'driver → GPU',t,16,{parent:g2});
+    // our layer wedge
+    const w=ramp(t,22);if(w>0){rect(-20,118,300,94,{fill:'none',stroke:C.gold,sw:3,parent:g2,op:w,rx:14});txt('a layer can live here',130,110,{size:20,fill:C.gold,anchor:'middle',parent:g2,op:w})}
+  }
+  // proof points
+  const proofs=[['DXVK','Direct3D → Vulkan',27],['ReShade','post-process injection',29],['OptiScaler','swaps upscalers',34],['RTX Remix','re-lights 2004 games',37]];
+  proofs.forEach((p,i)=>{const k=ramp(t,p[2]);if(k<=0)return;const g=grp({tf:`translate(${270+i*350} 700)`,op:k});rect(0,0,320,110,{fill:'#141b28',stroke:C.line,parent:g,rx:12});txt(p[0],160,48,{size:30,bold:true,anchor:'middle',parent:g});txt(p[1],160,85,{size:20,anchor:'middle',fill:C.mute,parent:g})});
+  const d=ramp(t,41);if(d>0){txt('Downshift: same mechanism, opposite direction — cheaper, not prettier',960,860,{size:34,anchor:'middle',fill:C.cool,op:d,bold:true})}
+});
+
+// 3 Frame pipeline
+const PIPE=[['CPU','game logic'],['API','D3D / Vulkan'],['Driver','or DXVK'],['Cmd buffer',''],['Geometry','vertex / mesh'],['Raster','tri → pixels'],['Pixel shaders','per pixel'],['ROP','depth · blend'],['Post','AO SSR TAA FSR'],['Present','display']];
+const PIPE_T=[6,11,18,18,25,32,37,45,51,59];
+scene('How a GPU renders a frame',70,[[0.5,'To know what to make cheaper, you have to know where a frame spends its time.'],[6,'The CPU runs the game logic and decides what to draw.'],[11,'It talks to a graphics API — Direct3D or Vulkan — and those calls are recorded into command buffers.'],[18,'The driver, or a translation layer like DXVK, turns them into something the GPU understands.'],[25,'Inside the GPU, geometry is transformed first: vertex, tessellation, mesh shaders.'],[32,'The rasteriser turns triangles into pixels — fragments.'],[37,'Then the pixel shaders run. For every pixel, every frame. This is where most of the time goes.'],[45,'The ROPs do the depth test and blending and write the result to memory.'],[51,'Then post-processing: ambient occlusion, reflections, bloom, anti-aliasing, upscaling, tone mapping.'],[59,'And finally the frame is presented. The whole loop runs sixty or more times every second.'],[65,'Pixel shading and post-processing dominate. They are also the stages a layer can rewrite.']],t=>{
+  const cols=5,w=300,h=130,gx=60,gy=90,x0=(1920-(cols*w+(cols-1)*gx))/2,y0=200;
+  PIPE.forEach((p,i)=>{const r=Math.floor(i/cols),c=i%cols;const x=x0+c*(w+gx),y=y0+r*(h+gy);const s=PIPE_T[i];const on=t>=s;
+    const hot=(i==6||i==8)&&t>=65;
+    const g=box(x,y,w,h,[p[0],p[1]],t,s,{stroke:hot?C.warm:(on?C.cool:C.line),color:C.text,size:26,sw:hot?4:2});
+    if(g&&i<PIPE.length-1){const nx=i+1;const nr=Math.floor(nx/cols),nc=nx%cols;if(nr==r)drawLine(x+w,y+h/2,x0+nc*(w+gx)-6,y+h/2,t,PIPE_T[nx]-0.4,{arrow:true,stroke:C.mute,d:.4});else drawLine(x+w/2,y+h,x0+nc*(w+gx)+w/2,y0+nr*(h+gy)-6,t,PIPE_T[nx]-0.4,{arrow:true,stroke:C.mute,d:.4})}
+    if(i==5&&on){const g2=grp({tf:`translate(${x+w-70} ${y+15})`});for(let k=0;k<4;k++)for(let j=0;j<4;j++)rect(k*12,j*12,10,10,{fill:(k+j)%2?C.cool:C.line,parent:g2,rx:1})}
+  });
+  // frame token travelling
+  if(t>=6&&t<64){let idx=0;for(let i=0;i<PIPE_T.length;i++)if(t>=PIPE_T[i])idx=i;const r=Math.floor(idx/cols),c=idx%cols;const x=x0+c*(w+gx)+w/2,y=y0+r*(h+gy)-30;circ(x,y,14,{fill:C.gold});txt('frame',x,y-22,{size:18,anchor:'middle',fill:C.gold})}
+  // ms meter
+  const ms=[0,0.2,0.3,0.3,0.6,0.4,7.0,0.5,5.5,0.2];let acc=0;for(let i=0;i<ms.length;i++)if(t>=PIPE_T[i])acc+=ms[i]*clamp((t-PIPE_T[i])/2);
+  const g=grp({tf:'translate(160 720)',op:ramp(t,6)});txt('GPU time this frame',0,0,{size:24,fill:C.mute,parent:g});rect(0,20,1600,36,{fill:'#0d121b',parent:g,rx:8});rect(0,20,1600*clamp(acc/16),36,{fill:acc>12?C.warm:C.cool,parent:g,rx:8});txt(acc.toFixed(1)+' ms',1620,48,{size:30,bold:true,parent:g,mono:true});txt('16.7 ms = 60 fps',1600,0,{size:20,fill:C.mute,anchor:'end',parent:g});
+});
+
+// 4 Inside the GPU
+scene('Inside an NVIDIA GPU',64,[[0.5,'Zoom inside the chip. NVIDIA GPUs are a hierarchy.'],[5,'Graphics Processing Clusters contain Texture Processing Clusters.'],[10,'Each TPC holds a pair of Streaming Multiprocessors — the SMs. They do the actual work.'],[17,'An SM runs threads in groups of 32 called warps. A pixel shader runs on a warp of 32 pixels in lockstep.'],[25,'The CUDA cores are the arithmetic units inside each SM. The 1060 has 1280 of them. The 3050 has 2560.'],[33,'On Turing and Ampere, each SM also has an RT core — a hardware unit that walks a bounding-volume tree to find what a ray hits.'],[42,'And Tensor cores — matrix-multiply units that power DLSS upscaling.'],[48,'Pascal has neither. The GTX 1060 can do ray tracing only in software on the SMs — five to ten times slower.'],[56,'This is the real gap. Not clock speed. Not core count. Missing hardware units.']],t=>{
+  // left: hierarchy
+  const g=grp({tf:'translate(140 150)'});
+  const gpc=ramp(t,1);if(gpc>0){rect(0,0,760,560,{fill:'#10161f',stroke:C.line,parent:g,op:gpc,rx:16});txt('GPC  — Graphics Processing Cluster',20,40,{size:22,fill:C.mute,parent:g,op:gpc});rect(20,60,720,40,{fill:'#0d121b',parent:g,op:gpc,rx:6});txt('raster engine',380,88,{size:20,anchor:'middle',fill:C.mute,parent:g,op:gpc})}
+  for(let i=0;i<2;i++){const k=ramp(t,5+i*.6);if(k<=0)continue;const gg=grp({tf:`translate(${20+i*360} 120)`,op:k,parent:g});rect(0,0,360,420,{fill:'#141b28',stroke:C.line,parent:gg,rx:12});txt('TPC',180,32,{size:22,anchor:'middle',fill:C.mute,parent:gg});
+    for(let j=0;j<2;j++){const s=ramp(t,10+j*.5+i*.3);if(s<=0)continue;const sm=grp({tf:`translate(${15+j*170} 50)`,op:s,parent:gg});rect(0,0,160,350,{fill:'#0d121b',stroke:C.cool,parent:sm,rx:10});txt('SM',80,30,{size:22,anchor:'middle',bold:true,parent:sm});
+      // cuda cores grid 8x8
+      const cc=ramp(t,25);for(let a=0;a<8;a++)for(let b=0;b<8;b++){const warpOn=t>=17&&Math.floor((t-17)*1.5)%8==b;rect(12+a*17,45+b*17,14,14,{fill:warpOn&&t<25?C.gold:(cc>0?C.cool:'#1b2534'),parent:sm,rx:2,op:warpOn?1:.8})}
+      txt('64 CUDA cores',80,200,{size:14,anchor:'middle',fill:C.mute,parent:sm,op:cc});
+      // RT / tensor
+      const rt=ramp(t,33),tn=ramp(t,42);rect(12,215,136,40,{fill:rt>0?'#3a1f14':'#1b2534',stroke:rt>0?C.warm:'none',parent:sm,rx:6});txt('RT core',80,241,{size:18,anchor:'middle',fill:rt>0?C.warm:C.line,parent:sm});
+      rect(12,265,136,40,{fill:tn>0?'#2a1f3a':'#1b2534',stroke:tn>0?C.violet:'none',parent:sm,rx:6});txt('Tensor cores',80,291,{size:18,anchor:'middle',fill:tn>0?C.violet:C.line,parent:sm});
+      rect(12,315,136,24,{fill:'#1b2534',parent:sm,rx:4});txt('L1 / shared / tex',80,332,{size:13,anchor:'middle',fill:C.mute,parent:sm});
+    }}
+  // warp callout
+  const wk=ramp(t,17);if(wk>0&&t<25){const gw=grp({tf:'translate(980 160)',op:wk});txt('warp = 32 threads in lockstep',0,0,{size:28,fill:C.gold});for(let i=0;i<32;i++)rect(i%16*34,30+Math.floor(i/16)*34,28,28,{fill:C.gold,parent:gw,rx:4,op:.5+.5*pulse(t+i*.05,1.5)});txt('one pixel shader × 32 pixels',0,120,{size:22,fill:C.mute,parent:gw})}
+  // right: comparison
+  const ck=ramp(t,25);if(ck>0){const gr=grp({tf:'translate(980 320)',op:ck});
+    [['GTX 1060 · Pascal',C.cool,'10 SMs · 1280 CUDA cores','RT cores: 0','Tensor cores: 0'],['RTX 3050 · Ampere',C.warm,'20 SMs · 2560 CUDA cores','RT cores: 20','Tensor cores: 80']].forEach((r,i)=>{const gg=grp({tf:`translate(${i*400} 0)`,parent:gr});rect(0,0,370,300,{fill:'#141b28',stroke:r[1],sw:3,parent:gg,rx:14});txt(r[0],185,45,{size:26,bold:true,anchor:'middle',fill:r[1],parent:gg});txt(r[2],185,100,{size:22,anchor:'middle',parent:gg});
+      txt(r[3],185,160,{size:26,anchor:'middle',fill:t>=33?(i?C.warm:C.red):C.line,parent:gg,bold:i==0&&t>=48});txt(r[4],185,215,{size:26,anchor:'middle',fill:t>=42?(i?C.violet:C.red):C.line,parent:gg,bold:i==0&&t>=48});
+      if(i==0&&t>=48)txt('software RT: 5–10× slower',185,265,{size:20,anchor:'middle',fill:C.red,parent:gg,op:ramp(t,48)})});
+    const fk=ramp(t,56);if(fk>0)txt('The real gap is missing hardware units — not clocks, not core count.',385,370,{size:26,anchor:'middle',fill:C.gold,op:fk,parent:gr});
+  }
+});
+
+// 5 Pascal vs Ampere table
+scene('Pascal vs Ampere',52,[[0.5,'Put them side by side.'],[4,'Raw shader throughput: the 3050 is about 1.4 times faster in composite benchmarks. That is a small gap.'],[12,'Memory bandwidth: 192 versus 224 gigabytes per second. Also small.'],[18,'Then the feature table. DirectX feature level 12_1 versus 12_2.'],[24,'12_2 bundles ray tracing 1.1, mesh shaders, variable-rate shading and sampler feedback. Pascal has none of them.'],[33,'DLSS: no. FSR 1, 2 and 3.1: yes — because FSR is ordinary shader code, open source under MIT.'],[41,'So there are two gaps. A raw gap of 1.4× we can close by rendering cheaper. And a feature gap we must route around.']],t=>{
+  const rows=[['Composite benchmark','2457','3468  (1.41×)',4,C.cool],['FP32 throughput','≈4.4 TFLOPS *','≈9.1 TFLOPS *',7,C.cool],['Memory bandwidth','192 GB/s','224 GB/s',12,C.cool],['DirectX feature level','12_1','12_2',18,C.warm],['Ray tracing (DXR 1.1)','software only','RT cores',24,C.warm],['Mesh shaders · VRS · sampler feedback','✗','✓',27,C.warm],['DLSS','✗  (no Tensor cores)','✓',33,C.warm],['FSR 1 / 2 / 3.1  (MIT, shader-only)','✓','✓',36,C.green]];
+  const g=grp({tf:'translate(160 150)',op:ramp(t,0.3)});rect(0,0,1600,70,{fill:'#141b28',parent:g,rx:12});txt('',0,0,{parent:g});txt('GTX 1060 6GB · Pascal',900,46,{size:26,bold:true,anchor:'middle',fill:C.cool,parent:g});txt('RTX 3050 8GB · Ampere',1350,46,{size:26,bold:true,anchor:'middle',fill:C.warm,parent:g});
+  rows.forEach((r,i)=>{const k=ramp(t,r[3]);if(k<=0)return;const y=90+i*64;const gg=grp({tf:`translate(${lerp(-40,0,k)} ${y})`,op:k,parent:g});rect(0,0,1600,56,{fill:i%2?'#10161f':'#131a26',parent:gg,rx:8});rect(0,0,8,56,{fill:r[4],parent:gg,rx:3});txt(r[0],30,40,{size:26,parent:gg});txt(r[1],900,40,{size:26,anchor:'middle',parent:gg,mono:true,fill:r[1].startsWith('✗')||r[1]=='software only'?C.red:C.text});txt(r[2],1350,40,{size:26,anchor:'middle',parent:gg,mono:true,fill:r[2]=='✓'||r[2]=='RT cores'?C.green:C.text})});
+  txt('* unverified — to be confirmed with a profiler capture',30,700,{size:18,fill:C.mute,parent:g,op:ramp(t,7)});
+  const k=ramp(t,41);if(k>0){const gg=grp({tf:'translate(160 775)',op:k});box(0,0,760,100,['RAW GAP ≈ 1.4×','close it by rendering cheaper'],t,41,{stroke:C.cool,color:C.cool,parent:gg,size:26});box(840,0,760,100,['FEATURE GAP (RT · DLSS · 12_2)','route around it with substitutes'],t,42,{stroke:C.warm,color:C.warm,parent:gg,size:26})}
+});
+
+// 6 Engines by era
+scene('Engines by era',66,[[0.5,'Why are modern games so expensive? Look at how engines grew.'],[6,'Early 2000s: per-vertex lighting, baked lightmaps, one small shadow map. Half-Life 2, Doom 3.'],[14,'Late 2000s: per-pixel lighting, cascaded shadow maps, screen-space ambient occlusion. Crysis invented SSAO.'],[23,'2014 to 2019: physically-based materials, deferred lighting, screen-space reflections, temporal anti-aliasing.'],[32,"This is the GTX 1060's home era. It was built for exactly this stack, and it runs it well."],[39,'2020 onward: the same PBR core — plus ray-traced reflections, shadows and global illumination, plus AI upscaling, plus mesh-shader geometry.'],[49,'The key observation: every one of those new layers has a 2017-era fallback that still exists inside most engines.'],[58,"Consoles and mid-range PCs needed those fallbacks. Downshift's job is to force them."]],t=>{
+  const eras=[['2000–06','fixed-function → shaders',['lightmaps','1 shadow map','MSAA'],6,'Half-Life 2 · Doom 3'],['2007–13','forward / early deferred',['per-pixel light','CSM','SSAO','FXAA'],14,'Crysis · UE3 · Frostbite 2'],['2014–19','PBR deferred',['PBR + IBL','CSM 2–4K','GTAO','SSR','TAA'],23,'UE4 · id Tech 6 · RE Engine'],['2020–26','RT hybrid',['PBR core','RT reflections','RT GI / Lumen','RT shadows','DLSS / FSR','Nanite / mesh'],39,'UE5 · id Tech 8 · Northlight']];
+  const x0=140,bw=380,gap=40;
+  CUR=grp({tf:'translate(0 -90)'});
+  line(x0,860,x0+4*(bw+gap),860,{stroke:C.line,sw:4});
+  eras.forEach((e,i)=>{const k=ramp(t,e[3]);if(k<=0)return;const x=x0+i*(bw+gap);const home=i==2&&t>=32;const g=grp({op:k});
+    rect(x,820,bw,40,{fill:home?'#11313a':'#141b28',stroke:home?C.cool:C.line,parent:g,rx:8});txt(e[0],x+bw/2,848,{size:24,bold:true,anchor:'middle',parent:g,fill:home?C.cool:C.text});
+    txt(e[1],x+bw/2,900,{size:20,anchor:'middle',fill:C.mute,parent:g});txt(e[4],x+bw/2,930,{size:18,anchor:'middle',fill:C.mute,parent:g});
+    e[2].forEach((b,j)=>{const bk=ramp(t,e[3]+1+j*.7);if(bk<=0)return;const rtish=i==3&&j>=1;const y=800-(j+1)*62;rect(x+10,y+lerp(20,0,bk),bw-20,54,{fill:rtish?'#3a1f14':(i==2?'#11313a':'#1b2534'),stroke:rtish?C.warm:(i==2?C.cool:'none'),parent:g,rx:8,op:bk});txt(b,x+bw/2,y+36,{size:22,anchor:'middle',parent:g,op:bk,fill:rtish?C.warm:C.text})});
+  });
+  if(t>=32&&t<39)txt('GTX 1060 home era',x0+2*(bw+gap)+bw/2,170,{size:30,anchor:'middle',fill:C.cool,bold:true,op:ramp(t,32)});
+  const fk=ramp(t,49);if(fk>0){const g=grp({op:fk});for(let j=1;j<6;j++){const y=800-(j+1)*62+27;drawLine(x0+3*(bw+gap)+10,y,x0+2*(bw+gap)+bw-10,Math.min(y,800-3*62+27),t,49+j*.4,{stroke:C.green,sw:3,arrow:true,d:.5,parent:g})}txt('every RT layer has a 2017 fallback',x0+2*(bw+gap)+bw/2,130,{size:28,anchor:'middle',fill:C.green,bold:true,parent:g})}
+});
+
+// 7 Milliseconds
+scene('Where the milliseconds go',72,[[0.5,'Here is a modern frame on an RTX 3050 at 1080p. About 16 milliseconds — 60 frames per second.'],[8,'The same frame on a GTX 1060. Ray tracing runs in software. Over 30 milliseconds. Unplayable.'],[16,'Now swap techniques one at a time.'],[20,'Ray-traced reflections become screen-space reflections. Twelve milliseconds saved.'],[27,'Ray-traced global illumination becomes probe or software GI.'],[33,'Ray-traced shadows become 2K cascaded shadow maps.'],[39,'Volumetric fog drops to quarter resolution with temporal reprojection.'],[45,'Then the biggest single win: render at 720p and let FSR 3.1 upscale to 1080p. About thirty percent off everything.'],[55,'The 1060 lands back near 16 milliseconds. The art, the gameplay, the game — unchanged.'],[63,'These numbers are estimates until the team replaces them with real profiler captures. The ratios are what matter.']],t=>{
+  // segments: name, ms3050, ms1060, msSub, swapTime, color
+  const seg=[['core geometry + PBR',4,6,6,99,C.mute],['RT reflections',3,15,3,20,C.warm],['RT GI',3,10,3.5,27,C.warm],['RT shadows',2,6,2.5,33,C.warm],['volumetrics',1.5,3,1.5,39,C.warm],['TAA + post',2.5,4,4,99,C.mute]];
+  const scale=1500/46;
+  function bar(y,label,getMs,color,op){const g=grp({tf:`translate(200 ${y})`,op});txt(label,0,-14,{size:24,fill:C.mute,parent:g});let x=0,tot=0;seg.forEach(s=>{const ms=getMs(s);tot+=ms;const w=ms*scale;rect(x,0,Math.max(w-4,0),70,{fill:s[5]==C.warm?(ms<=s[3]+0.01&&t>=s[4]?C.cool:C.warm):'#3a4356',parent:g,rx:6});if(w>90)txt(s[0],x+w/2,44,{size:17,anchor:'middle',parent:g});x+=w});
+    const fsr=t>=45&&getMs===ms1060;const k=fsr?lerp(1,0.75,ramp(t,45,1.5)):1;if(fsr){g.setAttribute('transform',`translate(200 ${y}) scale(${k} 1)`);const g2=grp({tf:`translate(200 ${y})`});txt((tot*k).toFixed(1)+' ms',1540,48,{size:34,bold:true,parent:g2,mono:true,fill:tot*k<17?C.green:C.red});txt('+ FSR 3.1 (720p → 1080p)',0,100,{size:22,fill:C.cool,parent:g2})}else txt(tot.toFixed(1)+' ms',1540,48,{size:34,bold:true,parent:g,mono:true,fill:tot<17?C.green:C.red});return g}
+  const ms3050=s=>s[1];const ms1060=s=>t>=s[4]?lerp(s[2],s[3],ramp(t,s[4],1.2)):s[2];
+  bar(230,'RTX 3050 · modern techniques · 1080p',ms3050,0,ramp(t,0.5));
+  bar(430,'GTX 1060 · same techniques',ms1060,0,ramp(t,8));
+  line(200+16.7*scale,190,200+16.7*scale,560,{stroke:C.green,dash:'8 8',sw:3,op:ramp(t,0.5)});txt('16.7 ms · 60 fps',200+16.7*scale+12,185,{size:20,fill:C.green,op:ramp(t,0.5)});
+  // swap list
+  const swaps=[['RT reflections → SSR',20],['RT GI → probe / software GI',27],['RT shadows → 2K CSM',33],['volumetrics → ¼ res + temporal',39],['native → 720p + FSR 3.1 Balanced',45]];
+  swaps.forEach((s,i)=>{const k=ramp(t,s[1]);if(k<=0)return;txt('✓  '+s[0],300+(i%2)*800,640+Math.floor(i/2)*50,{size:28,fill:C.cool,op:k})});
+  if(t>=63)txt('estimates — ratios matter; real profiler captures replace these numbers',960,860,{size:24,anchor:'middle',fill:C.gold,op:ramp(t,63)});
+});
+
+// 8 Buckets
+scene('Three buckets',60,[[0.5,'Every game lands in one of three buckets, and the agent decides which at launch.'],[7,'Bucket A: it already runs. The Low preset uses the old fallbacks. Cyberpunk with ray tracing off. Most Unreal 4 games.'],[16,'Downshift only adds value by automating the settings and injecting FSR where the game lacks it.'],[23,"Bucket B: the target. The game's default path uses RT or DLSS, but a fallback exists inside the engine and is just not exposed."],[33,'This is where all of our engineering goes.'],[37,'Bucket C: impossible. The engine has no non-RT path, or requires mesh shaders with no fallback.'],[45,'Indiana Jones and the Great Circle. Doom: The Dark Ages. No layer can make a GPU grow RT cores.'],[52,'Downshift must detect Bucket C up front and say so plainly — never crash, never render garbage.']],t=>{
+  box(760,140,400,80,'game launches through Downshift',t,0.5,{size:22});
+  drawLine(960,220,960,280,t,1,{arrow:true,stroke:C.mute,d:.3});
+  box(660,280,600,90,['requires RT / mesh shaders','with no fallback?'],t,1.3,{stroke:C.gold,size:24});
+  drawLine(1260,325,1500,325,t,2,{arrow:true,stroke:C.mute,d:.4});txt('yes',1380,312,{size:20,fill:C.mute,op:ramp(t,2)});
+  drawLine(960,370,960,430,t,2.3,{arrow:true,stroke:C.mute,d:.3});txt('no',985,410,{size:20,fill:C.mute,op:ramp(t,2.3)});
+  box(660,430,600,90,['has a Low preset','+ an upscaler for Pascal?'],t,2.6,{stroke:C.gold,size:24});
+  drawLine(660,475,420,475,t,3.2,{arrow:true,stroke:C.mute,d:.4});txt('yes',540,462,{size:20,fill:C.mute,op:ramp(t,3.2)});
+  drawLine(960,520,960,580,t,3.5,{arrow:true,stroke:C.mute,d:.3});txt('no',985,560,{size:20,fill:C.mute,op:ramp(t,3.5)});
+  // buckets
+  const B=[['A','already runs',C.green,120,430,['Cyberpunk 2077 (RT off)','Elden Ring · RE4 · most UE4'],'automate settings · inject FSR',7],['B','runs with swaps',C.cool,660,580,['UE5 Lumen titles (force SW Lumen)','DLSS-only titles (inject FSR)','always-on RT with console SSR path'],'ALL engineering goes here',23],['C','impossible',C.red,1500,280,['Indiana Jones: Great Circle','Doom: The Dark Ages · Avatar'],'detect → say so plainly',37]];
+  B.forEach(b=>{const k=ramp(t,b[7]);if(k<=0)return;const g=grp({tf:`translate(${b[3]} ${b[4]})`,op:k});const h=130+b[5].length*32;rect(0,0,b[0]=='B'?600:300,h,{fill:'#141b28',stroke:b[2],sw:3,parent:g,rx:14});txt(b[0],40,52,{size:44,bold:true,fill:b[2],parent:g});txt(b[1],90,48,{size:26,parent:g});b[5].forEach((s,i)=>txt(s,20,95+i*32,{size:20,fill:C.mute,parent:g}));txt(b[6],20,h-20,{size:20,fill:b[2],parent:g,bold:true})});
+  if(t>=33&&t<37){const g=grp({op:.4+.6*pulse(t,1)});rect(650,570,620,240,{fill:'none',stroke:C.cool,sw:5,parent:g,rx:18})}
+  if(t>=52)txt('never crash · never render garbage · tell the user',960,850,{size:28,anchor:'middle',fill:C.gold,op:ramp(t,52),bold:true});
+});
+
+// 9 The layer
+scene('The layer',84,[[0.5,'Now the architecture.'],[4,'The game speaks Direct3D 11, Direct3D 12, or Vulkan.'],[9,'DXVK and vkd3d-proton turn the first two into Vulkan. On Linux and Steam Deck they already do this for every game.'],[18,'Downshift is an implicit Vulkan layer. The loader inserts it into every Vulkan process — opt-in by an environment variable, no game files touched.'],[28,"It intercepts specific calls. On device creation: read the GPU's capabilities and detect Bucket C."],[36,'On extension enumeration: hide ray-tracing extensions so the engine takes its own non-RT path. The cheapest substitution of all.'],[46,'On shader creation: the full SPIR-V bytecode is in our hands. Rewrite it. A 64-sample loop becomes 16. A ray query becomes a constant miss.'],[57,'On image creation: a 4K shadow map becomes 2K. A full-res volumetric target becomes half-res.'],[65,'On present: run FSR from the lower internal resolution up to the display.'],[71,'All of this is driven by a profile JSON per game. Data, not code. Shareable by the community.'],[78,'Windows DirectX games get the same stack later, by shipping DXVK and vkd3d-proton as proxy DLLs.']],t=>{
+  // left column stack
+  const X=140;
+  box(X,160,360,90,'Game binary',t,0.5,{size:28,bold:true});
+  const apis=[['D3D11',4],['D3D12',4.5],['Vulkan',5]];apis.forEach((a,i)=>{box(X+i*125,290,110,60,a[0],t,a[1],{size:22});drawLine(X+180,250,X+i*125+55,288,t,a[1]-.2,{stroke:C.mute,d:.3})});
+  box(X,400,110,70,'DXVK',t,9,{size:20,stroke:C.cool});box(X+125,400,110,70,'vkd3d-proton',t,9.5,{size:14,stroke:C.cool});
+  drawLine(X+55,350,X+55,398,t,9,{stroke:C.mute,d:.3,arrow:true});drawLine(X+180,350,X+180,398,t,9.5,{stroke:C.mute,d:.3,arrow:true});
+  drawLine(X+55,470,X+180,540,t,10.5,{stroke:C.mute,d:.3});drawLine(X+180,470,X+180,540,t,10.5,{stroke:C.mute,d:.3});drawLine(X+305,350,X+180,540,t,10.5,{stroke:C.mute,d:.3});
+  box(X,540,360,110,['DOWNSHIFT','implicit Vulkan layer'],t,18,{stroke:C.gold,color:C.gold,size:26,bold:true,sw:4});
+  drawLine(X+180,650,X+180,700,t,19,{stroke:C.mute,d:.3,arrow:true});box(X,700,360,80,'Vulkan driver → GPU',t,19.5,{size:24});
+  if(t>=18)txt('DOWNSHIFT_ENABLE=1 · no game files touched',X+180,820,{size:18,anchor:'middle',fill:C.gold,op:ramp(t,20),mono:true});
+  // right: intercepts
+  const I=[['vkCreateDevice','read caps → detect Bucket C',28,C.red],['vkEnumerateDeviceExtensionProperties','hide RT ext → engine takes its own fallback',36,C.green],['vkCreateShaderModule','rewrite SPIR-V',46,C.cool],['vkCreateImage','4K shadow → 2K · volumetric → ½ res',57,C.cool],['vkQueuePresentKHR','FSR 3.1 upscale before present',65,C.cool]];
+  I.forEach((it,i)=>{const k=ramp(t,it[2]);if(k<=0)return;const g=grp({tf:`translate(${600+lerp(40,0,k)} ${160+i*104})`,op:k});rect(0,0,1180,92,{fill:'#141b28',stroke:it[3],sw:3,parent:g,rx:12});txt(it[0],24,42,{size:24,parent:g,mono:true,fill:it[3]});txt(it[1],24,80,{size:22,parent:g,fill:C.text});
+    if(i==2){const c=ramp(t,49);if(c>0){txt('for (i=0; i<64; ++i)  →  for (i=0; i<16; ++i)',620,42,{size:20,parent:g,mono:true,fill:C.mute,op:c});txt('OpRayQueryProceedKHR  →  constant miss → SSR path',620,80,{size:20,parent:g,mono:true,fill:C.mute,op:ramp(t,52)})}}
+    if(i==3){txt('depth-only · square · 4 layers ⇒ "shadow cascade"',620,42,{size:20,parent:g,mono:true,fill:C.mute,op:ramp(t,59)})}
+  });
+  // profile json
+  const pk=ramp(t,71);if(pk>0){const g=grp({tf:'translate(600 690)',op:pk});rect(0,0,1180,185,{fill:'#0d121b',stroke:C.line,parent:g,rx:12});const J=['{ "bucket": "B", "hide_extensions": ["VK_KHR_ray_query"],','  "upscale": { "mode": "fsr3.1", "quality": "balanced", "internal_scale": 0.59 },','  "shaders": [ { "class": "ssr", "passes": ["clamp-loop-trip:16"] }, … ],','  "measured": { "before_ms": 31.2, "after_ms": 15.8, "flip": 0.11 } }'];const chars=Math.floor((t-71)*60);let acc=0;J.forEach((l,i)=>{const s=l.slice(0,Math.max(0,chars-acc));acc+=l.length;txt(s,24,45+i*40,{size:21,parent:g,mono:true,fill:C.green})});txt('profile.json — data, not code',1160,172,{size:18,anchor:'end',fill:C.mute,parent:g})}
+  if(t>=78){txt('Windows later: ship DXVK + vkd3d-proton',X+180,865,{size:19,anchor:'middle',fill:C.cool,op:ramp(t,78)});txt('as proxy DLLs → same layer applies',X+180,892,{size:19,anchor:'middle',fill:C.cool,op:ramp(t,78)})}
+});
+
+// 10 Agent loop
+scene('The agent loop',60,[[0.5,'Who writes the profile? The agent.'],[4,'Capture one representative frame with GFXReconstruct.'],[9,'Replay it through the layer with timestamps around every pass. Now we know the milliseconds per pass.'],[17,'Classify each pass from its structure: shadow cascade, SSAO, SSR, volumetric, ray tracing, TAA, UI.'],[25,'Plan: the model picks substitutions from the cost library, biggest saving per quality loss first.'],[33,'Apply and measure: frame time, plus a perceptual difference score — FLIP — against the reference frame.'],[41,'Iterate until the target is met or the library is exhausted. Then a human reviews and the profile is published.'],[50,'Rules the agent cannot break: never touch UI passes, never emit a profile without measurements, never call a Bucket C game Bucket B.']],t=>{
+  const steps=[['1 · Capture','GFXReconstruct · one frame',4],['2 · Profile','timestamps per pass → ms',9],['3 · Classify','shadow · ssao · ssr · rt · ui',17],['4 · Plan','LLM + cost library',25],['5 · Apply + Measure','frame time · FLIP · SSIM',33],['6 · Iterate / Publish','human review gate',41]];
+  const cx=640,cy=520,R=300;
+  steps.forEach((s,i)=>{const a=-Math.PI/2+i*2*Math.PI/6;const x=cx+R*Math.cos(a),y=cy+R*Math.sin(a);const k=ramp(t,s[2]);if(k<=0)return;const act=t>=s[2]&&(i==5||t<steps[i+1][2]);const g=grp({tf:`translate(${x-150} ${y-50})`,op:k});rect(0,0,300,100,{fill:'#141b28',stroke:act?C.gold:C.line,sw:act?4:2,parent:g,rx:14});txt(s[0],150,40,{size:24,bold:true,anchor:'middle',parent:g,fill:act?C.gold:C.text});txt(s[1],150,75,{size:18,anchor:'middle',fill:C.mute,parent:g});
+    const n=(i+1)%6;const a2=-Math.PI/2+n*2*Math.PI/6;const k2=ramp(t,steps[n][2]-0.5);if(k2>0&&(n!=0||t>=41)){const x2=cx+R*Math.cos(a2),y2=cy+R*Math.sin(a2);const am=(a+a2)/2+(n==0?Math.PI:0);const mx=cx+(R+60)*Math.cos(am),my=cy+(R+60)*Math.sin(am);el('path',{d:`M${x+120*Math.cos(a2)} ${y+60*Math.sin(a2)} Q${mx} ${my} ${x2-120*Math.cos(a)} ${y2-60*Math.sin(a)}`,fill:'none',stroke:C.cool,'stroke-width':3,'marker-end':'url(#arrow)',opacity:k2})}});
+  if(t>=41)txt('loop until target met',cx,cy+10,{size:24,anchor:'middle',fill:C.cool,op:ramp(t,41)});
+  // gauges on right
+  const gk=ramp(t,33);if(gk>0){const g=grp({tf:'translate(1200 260)',op:gk});txt('measure',0,0,{size:24,fill:C.mute,parent:g});
+    const it=clamp((t-33)/8);const ms=lerp(31.2,15.8,easeOut(it)),fl=lerp(0.0,0.11,easeOut(it));
+    txt('frame time',0,60,{size:22,parent:g});rect(0,75,560,30,{fill:'#0d121b',parent:g,rx:6});rect(0,75,560*clamp(ms/40),30,{fill:ms<17?C.green:C.red,parent:g,rx:6});txt(ms.toFixed(1)+' ms',580,98,{size:24,parent:g,mono:true});
+    txt('FLIP perceptual diff (floor 0.15)',0,160,{size:22,parent:g});rect(0,175,560,30,{fill:'#0d121b',parent:g,rx:6});rect(0,175,560*clamp(fl/0.3),30,{fill:fl<0.15?C.green:C.red,parent:g,rx:6});line(560*0.5,165,560*0.5,215,{stroke:C.gold,sw:3,parent:g});txt(fl.toFixed(2),580,198,{size:24,parent:g,mono:true});
+  }
+  const rk=ramp(t,50);if(rk>0){const g=grp({tf:'translate(1200 560)',op:rk});rect(0,0,620,230,{fill:'#141b28',stroke:C.red,sw:2,parent:g,rx:14});txt('hard rules',24,44,{size:24,bold:true,fill:C.red,parent:g});['never touch UI / CPU-readback passes','never emit a profile without measurements','never label Bucket C as Bucket B','never modify game files on disk'].forEach((s,i)=>txt('✗  '+s,24,90+i*36,{size:22,parent:g}))}
+  if(t>=41)txt('profiles are data — one agent run helps every 1060 owner',1510,850,{size:22,anchor:'middle',fill:C.cool,op:ramp(t,45)});
+});
+
+// 11 Roadmap
+scene('Roadmap · how to help',50,[[0.5,'Where we are: M0, the research package — done and open as a pull request.'],[7,'M1: the Vulkan layer skeleton, Bucket C detection, FSR injection on a sample app.'],[14,'M2: the SPIR-V substitution passes. One Bucket B game at 1080p60 on a 1060.'],[21,'M3: the agent. The same game, profiled automatically.'],[26,'M4: Windows DirectX. M5: community profiles and an installer.'],[32,'The most valuable thing you can do today: real screenshots and profiler captures on both cards. The protocol is in the repo.'],[41,'Everything is MIT. Downshift — Kala Laya Studio.']],t=>{
+  const M=[['M0','Research','docs 01–08 · this video',0.5,true],['M1','Layer skeleton','implicit layer · Bucket C · FSR',7,false],['M2','SPIR-V passes','one Bucket B game @1080p60',14,false],['M3','Agent','profile generated automatically',21,false],['M4','Windows DX','DXVK + vkd3d proxy DLLs',26,false],['M5','Community','installer · shared profiles',28,false]];
+  line(160,330,1760,330,{stroke:C.line,sw:6,op:ramp(t,0.3)});
+  M.forEach((m,i)=>{const k=ramp(t,m[3]);if(k<=0)return;const x=160+i*320;const g=grp({op:k});circ(x,330,26,{fill:m[4]?C.green:'#141b28',stroke:m[4]?C.green:C.cool,sw:4,parent:g});if(m[4])txt('✓',x,340,{size:28,anchor:'middle',fill:'#0b0f17',bold:true,parent:g});txt(m[0],x,250,{size:34,bold:true,anchor:'middle',fill:m[4]?C.green:C.cool,parent:g});txt(m[1],x,400,{size:26,anchor:'middle',parent:g});wrap(m[2],22).forEach((l,j)=>txt(l,x,440+j*28,{size:19,anchor:'middle',fill:C.mute,parent:g}));if(i<5)line(x+26,330,Math.min(x+320-26,x+26+(294)*ramp(t,m[3]+.3,.8)),330,{stroke:C.cool,sw:6,parent:g})});
+  const hk=ramp(t,32);if(hk>0){const g=grp({tf:'translate(260 600)',op:hk});rect(0,0,1400,170,{fill:'#141b28',stroke:C.gold,sw:3,parent:g,rx:16});txt('How to help today',30,50,{size:30,bold:true,fill:C.gold,parent:g});txt('• Real screenshots on a GTX 1060 and an RTX 3050 — same scene, same camera — per screenshots/README.md',30,100,{size:22,parent:g});txt('• A PIX / Nsight / RenderDoc per-pass timing export: it replaces every estimated number in doc 02',30,140,{size:22,parent:g})}
+  const ek=ramp(t,41);if(ek>0){txt('MIT licensed  ·  github.com/sahith1412/theaham',960,830,{size:30,anchor:'middle',fill:C.cool,op:ek,mono:true});txt('DOWNSHIFT  —  KALA LAYA STUDIO',960,885,{size:40,anchor:'middle',bold:true,op:ramp(t,43)})}
+});
+
+/* ---------- timeline ---------- */
+const TOTAL=SCENES.reduce((a,s)=>a+s.dur,0);
+window.__total=()=>TOTAL;
+window.__seek=function(T){T=clamp(T,0,TOTAL-0.001);let acc=0,i=0;for(;i<SCENES.length;i++){if(T<acc+SCENES[i].dur)break;acc+=SCENES[i].dur}const s=SCENES[i];const t=T-acc;chrome(s.name,i,T);CUR=svg;s.draw(t);CUR=svg;caption(s.caps,t);
+  // scene fade in/out
+  const fi=clamp(t/0.5),fo=clamp((s.dur-t)/0.5);const f=Math.min(fi,fo);if(f<1)rect(0,0,1920,1080,{fill:C.bg,op:1-f,rx:0});
+  return TOTAL};
+__seek(0);
+</script>
+</body>
+</html>
